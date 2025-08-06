@@ -1,6 +1,6 @@
 import marimo
 
-__generated_with = "0.13.14"
+__generated_with = "0.13.15"
 app = marimo.App(width="medium", layout_file="layouts/arcanecodex.grid.json")
 
 
@@ -34,7 +34,15 @@ def _(dice):
 @app.cell
 def _(dice):
     def success_with_modifier(key,modifier):
-        return sum((prob for value, prob in dice.items() if value+modifier >= key))
+        sum = 0
+        for value, prob in dice.items():
+            if value in [2,3]:
+                sum += 0
+            elif value in [20]:
+                sum += prob
+            elif value+modifier >= key:
+                sum += prob
+        return sum
     return (success_with_modifier,)
 
 
@@ -53,9 +61,16 @@ def _(mo, modifier):
 
 @app.cell
 def _(modifier, pl, success_with_modifier):
-    #mo.ui.table([{"result":result}|{modifier:success_with_modifier[(result,modifier)] for modifier in range(20)} for result in range(30)],pagination=False)
-    df_success_with_modifier = pl.DataFrame({"result":range(0,30)}).with_columns(pl.col("result").map_elements(lambda result: success_with_modifier(result,modifier.value), return_dtype=pl.datatypes.Float64).alias("chance"))
-    #mo.ui.table(df_success_with_modifier,pagination=False)
+    # mo.ui.table([{"result":result}|{modifier:success_with_modifier[(result,modifier)] for modifier in range(20)} for result in range(30)],pagination=False)
+    df_success_with_modifier = pl.DataFrame({"result": range(0, 30)}).with_columns(
+        pl.col("result")
+        .map_elements(
+            lambda result: success_with_modifier(result, modifier.value),
+            return_dtype=pl.datatypes.Float64,
+        )
+        .alias("chance")
+    )
+    # mo.ui.table(df_success_with_modifier,pagination=False)
     return (df_success_with_modifier,)
 
 
@@ -111,7 +126,15 @@ def _(basedamage, damagedice, damagemodifier, minimum, mo):
 @app.cell
 def _(dice):
     def avg_damage(basedamage,modifier,bidding,minimum):
-        return sum((prob for value, prob in dice.items() if value+modifier-bidding >= minimum)) * (basedamage+bidding)
+        sum = 0
+        for value, prob in dice.items():
+            if value in [2,3]:
+                sum += 0
+            elif value in [20]:
+                sum += prob
+            elif value+modifier-bidding >= minimum:
+                sum += prob
+        return sum * (basedamage+bidding)
     #avg_damage(5.5*2+7,12,0,20)
     return (avg_damage,)
 
@@ -159,14 +182,38 @@ def _(df_avg_damage, pl):
 
 @app.cell
 def _(avg_damage, basedamage, modifier, pl):
-    def max_damage_bidding(basedamage,modifier,minimum):
-        df_avg_damage = pl.DataFrame({"bidding":range(0,30)}).with_columns(pl.col("bidding").map_elements(lambda bid: avg_damage(basedamage, modifier, bid, minimum), return_dtype=pl.datatypes.Float64).alias("avg damage"))
-        return df_avg_damage.select(pl.all().sort_by("avg damage").last())["bidding"].item()
+    def max_damage_bidding(basedamage, modifier, minimum):
+        df_avg_damage = pl.DataFrame({"bidding": range(0, 30)}).with_columns(
+            pl.col("bidding")
+            .map_elements(
+                lambda bid: avg_damage(basedamage, modifier, bid, minimum),
+                return_dtype=pl.datatypes.Float64,
+            )
+            .alias("avg damage")
+        )
+        return df_avg_damage.select(pl.all().sort_by("avg damage").last())[
+            "bidding"
+        ].item()
+
 
     df_max_damage = (
-        pl.DataFrame({"minimum":range(0,30)})
-        .with_columns(bidding=pl.col("minimum").map_elements(lambda minimum: max_damage_bidding(basedamage, modifier.value, minimum), return_dtype=pl.datatypes.Float64))
-        .with_columns(damage=pl.struct('minimum','bidding').map_elements(lambda x: avg_damage(basedamage,modifier.value,x["bidding"],x["minimum"]) , return_dtype=pl.datatypes.Float64))
+        pl.DataFrame({"minimum": range(0, 30)})
+        .with_columns(
+            bidding=pl.col("minimum").map_elements(
+                lambda minimum: max_damage_bidding(
+                    basedamage, modifier.value, minimum
+                ),
+                return_dtype=pl.datatypes.Float64,
+            )
+        )
+        .with_columns(
+            damage=pl.struct("minimum", "bidding").map_elements(
+                lambda x: avg_damage(
+                    basedamage, modifier.value, x["bidding"], x["minimum"]
+                ),
+                return_dtype=pl.datatypes.Float64,
+            )
+        )
     )
     return (df_max_damage,)
 
@@ -188,12 +235,12 @@ def _(al, basedamage, damagedice, damagemodifier, df_max_damage, mo, modifier):
     base = al.Chart(df_max_damage).encode(x='minimum')
 
     mo.vstack([
-        al.layer(
+        mo.ui.altair_chart(al.layer(
             base.mark_line(color='blue').encode(y='bidding',text='bidding'),
             base.mark_text().encode(y='bidding',text='bidding'),
             base.mark_line(color='red').encode(y='damage',text='damage'),
             base.mark_text().encode(y='damage',text='damage')
-        ),
+        )),
         mo.md(f"basedamage = {damagedice.value}W10+{damagemodifier.value} = {basedamage}, modifier = {modifier.value}")
     ])
     return
@@ -201,8 +248,16 @@ def _(al, basedamage, damagedice, damagemodifier, df_max_damage, mo, modifier):
 
 @app.cell
 def _(avg_damage, basedamage, modifier, pl):
-    df_avg_damage_grid = pl.DataFrame([dict(minimum=x,bidding=y) for x in range(0,30) for y in range(0,20)])\
-    .with_columns(damage=pl.struct('minimum','bidding').map_elements(lambda x: avg_damage(basedamage,modifier.value,x["bidding"],x["minimum"]) , return_dtype=pl.datatypes.Float64))
+    df_avg_damage_grid = pl.DataFrame(
+        [dict(minimum=x, bidding=y) for x in range(0, 30) for y in range(0, 20)]
+    ).with_columns(
+        damage=pl.struct("minimum", "bidding").map_elements(
+            lambda x: avg_damage(
+                basedamage, modifier.value, x["bidding"], x["minimum"]
+            ),
+            return_dtype=pl.datatypes.Float64,
+        )
+    )
     return (df_avg_damage_grid,)
 
 

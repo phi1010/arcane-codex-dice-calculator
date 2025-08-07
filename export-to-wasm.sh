@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-marimo export html-wasm arcanecodex.py -o . --mode run
+mkdir wasm
+marimo export html-wasm arcanecodex.py -o ./wasm --mode run
